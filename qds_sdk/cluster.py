@@ -524,6 +524,9 @@ class Cluster(Resource):
             network_config_group.add_argument("--master-elastic-ip",
                                               dest="master_elastic_ip",
                                               help="master elastic ip for cluster")
+            network_config_group.add_argument("--vcn-id",
+                                              dest="vcn_id",
+                                              help="vcn for oracle", )
             network_config_group.add_argument("--compartment-id",
                                               dest="compartment_id",
                                               help="compartment id for oracle cluster")
@@ -1490,6 +1493,7 @@ class ClusterInfoV2(object):
                             vnet_name =None,
                             subnet_name=None,
                             vnet_resource_group_name=None,
+                            vcn_id=None,
                             compartment_id=None,
                             image_id=None):
         self.cloud_config['network_config'] = {}
@@ -1504,6 +1508,7 @@ class ClusterInfoV2(object):
         self.cloud_config['network_config']['subnet_name'] = subnet_name
         self.cloud_config['network_config']['vnet_resource_group_name'] = vnet_resource_group_name
 
+        self.cloud_config['network_config']['vcn_id'] = vcn_id
         self.cloud_config['network_config']['compartment_id'] = compartment_id
         self.cloud_config['network_config']['image_id'] = image_id
 
@@ -1682,6 +1687,7 @@ class ClusterInfoV2(object):
                         master_elastic_ip=None,
                         subnet_name=None,
                         vnet_resource_group_name=None,
+                        vcn_id=None,
                         compartment_id=None,
                         image_id=None,
                         vnet_name=None,
@@ -1756,6 +1762,7 @@ class ClusterInfoV2(object):
                                 vnet_name,
                                 subnet_name,
                                 vnet_resource_group_name,
+                                vcn_id,
                                 compartment_id,
                                 image_id)
         self.set_storage_config(storage_access_key,

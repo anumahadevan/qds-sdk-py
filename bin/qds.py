@@ -295,6 +295,7 @@ def _create_cluster_info(arguments, api_version):
                                       vnet_name=arguments.vnet_name,
                                       subnet_name=arguments.subnet_name,
                                       vnet_resource_group_name=arguments.vnet_resource_group_name,
+                                      vcn_id=arguments.vcn_id,
                                       master_elastic_ip=arguments.master_elastic_ip
                                       )
     elif api_version == 1.3:
