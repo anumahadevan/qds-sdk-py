@@ -399,6 +399,14 @@ class Cluster(Resource):
                                         dest="compute_secret_key",
                                         default=None,
                                         help="secret key for aws cluster")
+            compute_config.add_argument("--compute-external-id",
+                                        dest="compute_external_id",
+                                        default=None,
+                                        help="external id for aws cluster")
+            compute_config.add_argument("--compute-role-arn",
+                                        dest="compute_role_arn",
+                                        default=None,
+                                        help="role arn for aws cluster")
             compute_config.add_argument("--use-account-compute-creds",
                                         dest="use_account_compute_creds",
                                         default=None,
@@ -1449,6 +1457,8 @@ class ClusterInfoV2(object):
                             use_account_compute_creds=None,
                             compute_access_key=None,
                             compute_secret_key=None,
+                            compute_external_id=None,
+                            compute_role_arn = None,
                             role_instance_profile=None,
                             compute_tenant_id=None,
                             compute_subscription_id=None,
@@ -1464,6 +1474,8 @@ class ClusterInfoV2(object):
         self.cloud_config['compute_config']['compute_access_key'] = compute_access_key
         self.cloud_config['compute_config']['compute_secret_key'] = compute_secret_key
         self.cloud_config['compute_config']['role_instance_profile'] = role_instance_profile
+        self.cloud_config['compute_config']['compute_external_id'] = compute_external_id
+        self.cloud_config['compute_config']['compute_role_arn'] = compute_role_arn
 
         self.cloud_config['compute_config']['compute_tenant_id'] = compute_tenant_id
         self.cloud_config['compute_config']['compute_subscription_id'] = compute_subscription_id
@@ -1670,6 +1682,8 @@ class ClusterInfoV2(object):
                         compute_tenant_id=None,
                         compute_access_key=None,
                         compute_secret_key=None,
+                        compute_external_id=None,
+                        compute_role_arn=None,
                         compute_user_id=None,
                         compute_key_finger_print=None,
                         compute_api_private_rsa_key=None,
@@ -1744,6 +1758,8 @@ class ClusterInfoV2(object):
                                 use_account_compute_creds,
                                 compute_access_key,
                                 compute_secret_key,
+                                compute_external_id,
+                                compute_role_arn,
                                 role_instance_profile,
                                 compute_tenant_id,
                                 compute_subscription_id,
