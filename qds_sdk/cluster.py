@@ -1195,6 +1195,7 @@ class ClusterInfoV13(object):
                          use_hadoop2=None,
                          use_spark=None,
                          use_qubole_placement_policy=None,
+                         enable_rubix=None,
                          maximum_bid_price_percentage=None,
                          timeout_for_request=None,
                          maximum_spot_instance_percentage=None,
@@ -1212,8 +1213,7 @@ class ClusterInfoV13(object):
                          enable_presto=None,
                          bastion_node_public_dns=None,
                          role_instance_profile=None,
-                         presto_custom_config=None,
-                         enable_rubix=None):
+                         presto_custom_config=None):
         """
         Kwargs:
 
@@ -1582,6 +1582,7 @@ class ClusterInfoV2(object):
     def set_engine_config(self, flavour=None,
                             custom_hadoop_config =None,
                             use_qubole_placement_policy=None,
+                            enable_rubix=None,
                             node_bootstrap_timeout=None,
                             presto_version=None,
                             custom_presto_config=None,
@@ -1591,8 +1592,7 @@ class ClusterInfoV2(object):
                             fernet_key=None,
                             overrides=None,
                             kafka_brokers=None,
-                            kafka_version=None,
-                            enable_rubix=None
+                            kafka_version=None
                             ):
 
         self.set_hadoop_settings(flavour, custom_hadoop_config, use_qubole_placement_policy, node_bootstrap_timeout, enable_rubix)
