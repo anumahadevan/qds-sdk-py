@@ -1524,6 +1524,19 @@ class TestClusterCreate(QdsCliTestCase):
                                                      'heterogeneous_config': 'test'
                                                     }
                                                  })
+    def test_airflow_version(self):
+        sys.argv = ['qds.py', '--version', 'v2', 'cluster', 'create', '--label', 'test_label',
+                    'version', '1.8.2']
+        print_command()
+        Connection._api_call = Mock(return_value={})
+        qds.main()
+        Connection._api_call.assert_called_with('POST', 'clusters',
+                                                {'cluster_info':
+                                                     {'label': ['test_label'],
+                                                     'heterogeneous_config': 'test'
+                                                    }
+                                                 })
+
 
 class TestClusterUpdate(QdsCliTestCase):
     def test_minimal(self):

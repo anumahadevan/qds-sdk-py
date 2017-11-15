@@ -294,6 +294,7 @@ def _create_cluster_info(arguments, api_version):
                                       dbtap_id=arguments.dbtap_id,
                                       fernet_key=arguments.fernet_key,
                                       overrides=arguments.overrides,
+                                      version=arguments.version,
                                       vnet_name=arguments.vnet_name,
                                       subnet_name=arguments.subnet_name,
                                       vnet_resource_group_name=arguments.vnet_resource_group_name,

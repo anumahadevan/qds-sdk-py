@@ -596,6 +596,10 @@ class Cluster(Resource):
                                              dest="overrides",
                                              default=None,
                                              help="overrides for airflow cluster", )
+            engine_config_group.add_argument("--version",
+                                             dest="version",
+                                             default='1.7.0',
+                                             help="version for airflow cluster", )
 
             datadog_group = argparser.add_argument_group("datadog settings")
             datadog_group.add_argument("--datadog-api-token",
@@ -1574,6 +1578,7 @@ class ClusterInfoV2(object):
                             dbtap_id=None,
                             fernet_key=None,
                             overrides=None,
+                            version='1.7.0',
                             kafka_brokers=None,
                             kafka_version=None
                             ):
@@ -1581,7 +1586,7 @@ class ClusterInfoV2(object):
         self.set_hadoop_settings(flavour, custom_hadoop_config, use_qubole_placement_policy, node_bootstrap_timeout)
         self.set_presto_settings(flavour, presto_version, custom_presto_config)
         self.set_spark_settings(flavour, spark_version, custom_spark_config)
-        self.set_airflow_settings(flavour, dbtap_id, fernet_key, overrides)
+        self.set_airflow_settings(flavour, dbtap_id, fernet_key, overrides, version)
         self.set_streamx_settings(flavour, kafka_brokers, kafka_version)
 
     def set_hadoop_settings(self,
@@ -1618,12 +1623,14 @@ class ClusterInfoV2(object):
     def set_airflow_settings(self, flavour=None,
                              dbtap_id=None,
                              fernet_key=None,
-                             overrides=None):
+                             overrides=None,
+                             version='1.7.0'):
         self.engine_config['flavour'] = flavour
         self.engine_config['airflow_settings'] = {}
         self.engine_config['airflow_settings']['dbtap_id'] = dbtap_id
         self.engine_config['airflow_settings']['fernet_key'] = fernet_key
         self.engine_config['airflow_settings']['overrides'] = overrides
+        self.engine_config['airflow_settings']['version'] = version
 
     def set_streamx_settings(self,
                                 flavour,
@@ -1772,6 +1779,7 @@ class ClusterInfoV2(object):
                         dbtap_id=None,
                         fernet_key=None,
                         overrides=None,
+                        version='1.7.0',
                         fairscheduler_config_xml=None,
                         default_pool=None,
                         enable_ganglia_monitoring=None,
@@ -1857,6 +1865,7 @@ class ClusterInfoV2(object):
                                 dbtap_id,
                                 fernet_key,
                                 overrides,
+                                version,
                                 kafka_brokers,
                                 kafka_version)
         self.set_fairscheduler_settings(fairscheduler_config_xml,
