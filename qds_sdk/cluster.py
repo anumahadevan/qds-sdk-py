@@ -1618,7 +1618,7 @@ class ClusterInfoV2(object):
 
     def set_hive_settings(self, flavour, enable_hive_metadata_cache):
         self.engine_config['hive_settings'] = {}
-        self.engine_config['hive_settings'] ['enable_hive_metadata_cache'] = enable_hive_metadata_cache
+        self.engine_config['hive_settings'] ['is_metadata_cache_enabled'] = enable_hive_metadata_cache
 
     def set_fairscheduler_settings(self, fairscheduler_config_xml=None, default_pool=None):
         self.engine_config['hadoop_settings']['fairscheduler_settings'] = {}

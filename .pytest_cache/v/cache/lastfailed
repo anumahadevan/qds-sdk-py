@@ -1,0 +1,8 @@
+{
+  "tests/test_account.py::TestAccountCreate::test_all": true, 
+  "tests/test_account.py::TestAccountCreate::test_default_previous_account_plan": true, 
+  "tests/test_cluster.py::TestClusterList::test_state_down": true, 
+  "tests/test_cluster.py::TestClusterList::test_state_pending": true, 
+  "tests/test_cluster.py::TestClusterList::test_state_terminating": true, 
+  "tests/test_cluster.py::TestClusterList::test_state_up": true
+}
