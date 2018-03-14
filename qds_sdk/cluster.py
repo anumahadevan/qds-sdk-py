@@ -1601,7 +1601,7 @@ class ClusterInfoV2(object):
         self.set_spark_settings(flavour, spark_version, custom_spark_config)
         self.set_airflow_settings(flavour, dbtap_id, fernet_key, overrides)
         self.set_streamx_settings(flavour, kafka_brokers, kafka_version)
-        self.set_hive_settings(enable_hive_metadata_cache)
+        self.set_hive_settings(flavour, enable_hive_metadata_cache)
 
     def set_hadoop_settings(self,
                             flavour,
@@ -1616,9 +1616,10 @@ class ClusterInfoV2(object):
         self.engine_config['hadoop_settings']['enable_rubix'] = enable_rubix
         self.engine_config['hadoop_settings']['node_bootstrap_timeout'] = node_bootstrap_timeout
 
-    def set_hive_settings(self, enable_hive_metadata_cache):
-        self.engine_config['hive_settings'] = {}
-        self.engine_config['hive_settings'] ['is_metadata_cache_enabled'] = enable_hive_metadata_cache
+    def set_hive_settings(self, flavour, enable_hive_metadata_cache):
+        if flavour and flavour == 'hadoop2':
+            self.engine_config['hive_settings'] = {}
+            self.engine_config['hive_settings'] ['is_metadata_cache_enabled'] = enable_hive_metadata_cache
 
     def set_fairscheduler_settings(self, fairscheduler_config_xml=None, default_pool=None):
         self.engine_config['hadoop_settings']['fairscheduler_settings'] = {}
