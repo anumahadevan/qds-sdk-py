@@ -48,7 +48,7 @@ class Qubole:
 
             `poll_interval`: interval in secs when polling QDS for events
         """
-        cls._auth = QuboleAuth(api_token)
+        cls._auth = QuboleAuth("c6f521ed60ac489e8791ba8daac911775302f244fb9d4bd98086cc39155117f2")
         cls.api_token = api_token
         cls.version = version
         cls.baseurl = api_url
