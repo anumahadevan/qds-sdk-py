@@ -93,10 +93,11 @@ class Qubole:
 
     @classmethod
     def get_cloud(cls):
-        log.debug("check data_test :: %s" % str(cls))
-        about_env = Connection(cls._auth, re.sub('api$','',cls.baseurl.rstrip('/')), cls.skip_ssl_cert_check)\
-                .get(path='/about')
-        if about_env is not None and type(about_env) is dict:
-            return about_env.get('provider')
-        else:
-            return 'aws'
+        # log.debug("check data_test :: %s" % str(cls))
+        # about_env = Connection(cls._auth, re.sub('api$','',cls.baseurl.rstrip('/')), cls.skip_ssl_cert_check)\
+        #         .get(path='/about')
+        # if about_env is not None and type(about_env) is dict:
+        #     return about_env.get('provider')
+        # else:
+        #     return 'aws'
+        return 'aws'
