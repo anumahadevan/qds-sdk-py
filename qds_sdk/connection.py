@@ -32,6 +32,7 @@ class MyAdapter(HTTPAdapter):
 class Connection:
 
     def __init__(self, auth, rest_url, skip_ssl_cert_check, reuse=True):
+        log.debug("%s %s %s" % (str(auth),str(rest_url),str(skip_ssl_cert_check)))
         self.auth = auth
         self.rest_url = rest_url
         self.skip_ssl_cert_check = skip_ssl_cert_check
