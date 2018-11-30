@@ -6,6 +6,7 @@ cluster information.
 from qds_sdk.qubole import Qubole
 from qds_sdk.resource import Resource
 from argparse import ArgumentParser
+from qds_sdk import util
 
 import logging
 import json
@@ -82,7 +83,7 @@ class Cluster(Resource):
         """
         Show information about the cluster with id/label `cluster_id_label`.
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         return conn.get(cls.element_path(cluster_id_label))
 
     @classmethod
@@ -90,7 +91,7 @@ class Cluster(Resource):
         """
         Show the status of the cluster with id/label `cluster_id_label`.
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         return conn.get(cls.element_path(cluster_id_label) + "/state")
 
     @classmethod
@@ -107,7 +108,7 @@ class Cluster(Resource):
         """
         Terminate the cluster with id/label `cluster_id_label`.
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         data = {"state": "terminate"}
         return conn.put(cls.element_path(cluster_id_label) + "/state", data)
 
@@ -171,6 +172,9 @@ class Cluster(Resource):
         ec2_group.add_argument("--vpc-id",
                                dest="vpc_id",
                                help="vpc to create the cluster in",)
+        ec2_group.add_argument("--master-elastic-ip",
+                               dest="master_elastic_ip",
+                               help="elastic ip to attach to master",)
         ec2_group.add_argument("--bastion-node-public-dns",
                                dest="bastion_node_public_dns",
                                help="public dns name of the bastion node. Required only if cluster is in private subnet of a EC2-VPC",)
@@ -201,7 +205,7 @@ class Cluster(Resource):
                                        " may be auto-scaled up to")
         node_config_group.add_argument("--slave-request-type",
                                   dest="slave_request_type",
-                                  choices=["ondemand", "spot", "hybrid"],
+                                  choices=["ondemand", "spot", "hybrid", "spotblock"],
                                   help="purchasing option for slave instaces",)
         hadoop_group.add_argument("--custom-config",
                                   dest="custom_config_file",
@@ -210,6 +214,9 @@ class Cluster(Resource):
         hadoop_group.add_argument("--use-hbase", dest="use_hbase",
                                   action="store_true", default=None,
                                   help="Use hbase on this cluster",)
+        hadoop_group.add_argument("--is-ha", dest="is_ha",
+                                  action="store_true", default=None,
+                                  help="Enable HA config for cluster")
         if api_version >= 1.3:
           qubole_placement_policy_group = hadoop_group.add_mutually_exclusive_group()
           qubole_placement_policy_group.add_argument("--use-qubole-placement-policy",
@@ -308,6 +315,13 @@ class Cluster(Resource):
                                        type=str2bool,
                                        help="whether to fallback to on-demand instances for stable nodes" +
                                        " if spot instances aren't available")
+
+        spot_block_group = argparser.add_argument_group("spot block settings")
+        spot_block_group.add_argument("--spot-block-duration",
+                                      dest="spot_block_duration",
+                                      type=int,
+                                      help="spot block duration" +
+                                           " unit: minutes")
 
         fairscheduler_group = argparser.add_argument_group(
                               "fairscheduler configuration options")
@@ -496,7 +510,7 @@ class Cluster(Resource):
 
             `label`: label to be moved from the source cluster
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         data = {
                     "destination_cluster": destination_cluster,
                     "label": label
@@ -508,7 +522,7 @@ class Cluster(Resource):
         """
         Delete the cluster with id/label `cluster_id_label`.
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         return conn.delete(cls.element_path(cluster_id_label))
 
     @classmethod
@@ -588,7 +602,7 @@ class Cluster(Resource):
         """
         Create hbase snapshot full/incremental
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         parameters = {}
         parameters['s3_location'] = s3_location
         if backup_type:
@@ -600,7 +614,7 @@ class Cluster(Resource):
         """
         Restoring cluster from a given hbase snapshot id
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         parameters = {}
         parameters['s3_location'] = s3_location
         parameters['backup_id'] = backup_id
@@ -614,7 +628,7 @@ class Cluster(Resource):
         """
         Get details for snapshot schedule
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         return conn.get(cls.element_path(cluster_id_label) + "/snapshot_schedule")
 
     @classmethod
@@ -622,7 +636,7 @@ class Cluster(Resource):
         """
         Update for snapshot schedule
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
 
         data = {}
         if s3_location is not None:
@@ -642,7 +656,7 @@ class Cluster(Resource):
       """
       Add a node to an existing cluster
       """
-      conn = Qubole.agent()
+      conn = Qubole.agent(version=Cluster.api_version)
       parameters = {} if not parameters else parameters
       return conn.post(cls.element_path(cluster_id_label) + "/nodes", data={"parameters" : parameters})
 
@@ -651,7 +665,7 @@ class Cluster(Resource):
         """
         Add a node to an existing cluster
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         parameters = {} if not parameters else parameters
         data = {"private_dns" : private_dns, "parameters" : parameters}
         return conn.delete(cls.element_path(cluster_id_label) + "/nodes", data)
@@ -661,7 +675,7 @@ class Cluster(Resource):
         """
         Add a node to an existing cluster
         """
-        conn = Qubole.agent()
+        conn = Qubole.agent(version=Cluster.api_version)
         parameters = {} if not parameters else parameters
         data = {"command" : command, "private_dns" : private_dns, "parameters" : parameters}
         return conn.put(cls.element_path(cluster_id_label) + "/nodes", data)
@@ -715,6 +729,7 @@ class ClusterInfo():
                          aws_availability_zone=None,
                          vpc_id=None,
                          subnet_id=None,
+                         master_elastic_ip=None,
                          role_instance_profile=None,
                          bastion_node_public_dns=None):
         """
@@ -737,6 +752,7 @@ class ClusterInfo():
         self.ec2_settings['vpc_id'] = vpc_id
         self.ec2_settings['subnet_id'] = subnet_id
         self.ec2_settings['role_instance_profile'] = role_instance_profile
+        self.ec2_settings['master_elastic_ip'] = master_elastic_ip
         self.ec2_settings['bastion_node_public_dns'] = bastion_node_public_dns
 
     def set_hadoop_settings(self, master_instance_type=None,
@@ -748,7 +764,8 @@ class ClusterInfo():
                             use_hbase=None,
                             custom_ec2_tags=None,
                             use_hadoop2=None,
-                            use_spark=None):
+                            use_spark=None,
+                            is_ha=None):
         """
         Kwargs:
 
@@ -773,6 +790,9 @@ class ClusterInfo():
         `use_hadoop2`: Use hadoop2 in this cluster
 
         `use_spark`: Use spark in this cluster
+
+        `is_ha` : enable HA config for cluster
+
         """
         self.hadoop_settings['master_instance_type'] = master_instance_type
         self.hadoop_settings['slave_instance_type'] = slave_instance_type
@@ -783,6 +803,7 @@ class ClusterInfo():
         self.hadoop_settings['use_hbase'] = use_hbase
         self.hadoop_settings['use_hadoop2'] = use_hadoop2
         self.hadoop_settings['use_spark'] = use_spark
+        self.hadoop_settings['is_ha'] = is_ha
 
         if custom_ec2_tags and custom_ec2_tags.strip():
             try:
@@ -882,7 +903,7 @@ class ClusterInfo():
         creating or updating a cluster.
         """
         payload = {"cluster": self.__dict__}
-        return _make_minimal(payload)
+        return util._make_minimal(payload)
 
 class ClusterInfoV13():
     """
@@ -914,6 +935,7 @@ class ClusterInfoV13():
                          aws_availability_zone=None,
                          vpc_id=None,
                          subnet_id=None,
+                         master_elastic_ip=None,
                          disallow_cluster_termination=None,
                          enable_ganglia_monitoring=None,
                          node_bootstrap_file=None,
@@ -935,6 +957,7 @@ class ClusterInfoV13():
                          stable_maximum_bid_price_percentage=None,
                          stable_timeout_for_request=None,
                          stable_allow_fallback=True,
+                         spot_block_duration=None,
                          ebs_volume_count=None,
                          ebs_volume_type=None,
                          ebs_volume_size=None,
@@ -946,7 +969,8 @@ class ClusterInfoV13():
                          enable_presto=None,
                          bastion_node_public_dns=None,
                          role_instance_profile=None,
-                         presto_custom_config=None):
+                         presto_custom_config=None,
+                         is_ha=None):
         """
         Kwargs:
 
@@ -964,6 +988,8 @@ class ClusterInfoV13():
         `vpc_id`: The vpc to create the cluster in.
 
         `subnet_id`: The subnet to create the cluster in.
+
+        `master_elastic_ip`: Elastic IP to attach to master node
 
         `disallow_cluster_termination`: Set this to True if you don't want
             qubole to auto-terminate idle clusters. Use this option with
@@ -1026,6 +1052,9 @@ class ClusterInfoV13():
         `stable_allow_fallback`: Whether to fallback to on-demand instances for
             stable nodes if spot instances are not available
 
+        `spot_block_duration`: Time for which the spot block instance is provisioned (Unit:
+            minutes)
+
         `ebs_volume_count`: Number of EBS volumes to attach 
             to each instance of the cluster.
 
@@ -1052,6 +1081,8 @@ class ClusterInfoV13():
 
         `bastion_node_public_dns`: Public dns name of the bastion node. Required only if cluster is in private subnet.
 
+        `is_ha`: Enabling HA config for cluster
+
         """
 
         self.disallow_cluster_termination = disallow_cluster_termination
@@ -1059,30 +1090,33 @@ class ClusterInfoV13():
         self.node_bootstrap_file = node_bootstrap_file
         self.set_node_configuration(master_instance_type, slave_instance_type, initial_nodes, max_nodes, slave_request_type, fallback_to_ondemand)
         self.set_ec2_settings(aws_access_key_id, aws_secret_access_key, aws_region, aws_availability_zone, vpc_id, subnet_id,
-                                bastion_node_public_dns, role_instance_profile)
-        self.set_hadoop_settings(custom_config, use_hbase, custom_ec2_tags, use_hadoop2, use_spark, use_qubole_placement_policy)
+                              master_elastic_ip, bastion_node_public_dns, role_instance_profile)
+        self.set_hadoop_settings(custom_config, use_hbase, custom_ec2_tags, use_hadoop2, use_spark, use_qubole_placement_policy, is_ha)
         self.set_spot_instance_settings(maximum_bid_price_percentage, timeout_for_request, maximum_spot_instance_percentage)
         self.set_stable_spot_instance_settings(stable_maximum_bid_price_percentage, stable_timeout_for_request, stable_allow_fallback)
+        self.set_spot_block_settings(spot_block_duration)
         self.set_ebs_volume_settings(ebs_volume_count, ebs_volume_type, ebs_volume_size)
         self.set_fairscheduler_settings(fairscheduler_config_xml, default_pool)
         self.set_security_settings(encrypted_ephemerals, ssh_public_key, persistent_security_group)
         self.set_presto_settings(enable_presto, presto_custom_config)
 
     def set_ec2_settings(self,
-                           aws_access_key_id=None,
-                           aws_secret_access_key=None,
-                           aws_region=None,
-                           aws_availability_zone=None,
-                           vpc_id=None,
-                           subnet_id=None,
-                           bastion_node_public_dns=None,
-                           role_instance_profile=None):
+                         aws_access_key_id=None,
+                         aws_secret_access_key=None,
+                         aws_region=None,
+                         aws_availability_zone=None,
+                         vpc_id=None,
+                         subnet_id=None,
+                         master_elastic_ip=None,
+                         bastion_node_public_dns=None,
+                         role_instance_profile=None):
         self.ec2_settings['compute_access_key'] = aws_access_key_id
         self.ec2_settings['compute_secret_key'] = aws_secret_access_key
         self.ec2_settings['aws_region'] = aws_region
         self.ec2_settings['aws_preferred_availability_zone'] = aws_availability_zone
         self.ec2_settings['vpc_id'] = vpc_id
         self.ec2_settings['subnet_id'] = subnet_id
+        self.ec2_settings['master_elastic_ip'] = master_elastic_ip
         self.ec2_settings['bastion_node_public_dns'] = bastion_node_public_dns
         self.ec2_settings['role_instance_profile'] = role_instance_profile
 
@@ -1104,12 +1138,14 @@ class ClusterInfoV13():
                             custom_ec2_tags=None,
                             use_hadoop2=None,
                             use_spark=None,
-                            use_qubole_placement_policy=None,):
+                            use_qubole_placement_policy=None,
+                            is_ha=None):
         self.hadoop_settings['custom_config'] = custom_config
         self.hadoop_settings['use_hbase'] = use_hbase
         self.hadoop_settings['use_hadoop2'] = use_hadoop2
         self.hadoop_settings['use_spark'] = use_spark
         self.hadoop_settings['use_qubole_placement_policy'] = use_qubole_placement_policy
+        self.hadoop_settings['is_ha'] = is_ha
 
         if custom_ec2_tags and custom_ec2_tags.strip():
             try:
@@ -1132,6 +1168,9 @@ class ClusterInfoV13():
                'maximum_bid_price_percentage': maximum_bid_price_percentage,
                'timeout_for_request': timeout_for_request,
                'allow_fallback': allow_fallback}
+
+    def set_spot_block_settings(self, spot_block_duration=None):
+        self.node_configuration['spot_block_settings'] = {'duration': spot_block_duration}
 
     def set_ebs_volume_settings(self, ebs_volume_count=None,
                                  ebs_volume_type=None,
@@ -1166,21 +1205,4 @@ class ClusterInfoV13():
         """
         payload_dict = self.__dict__
         payload_dict.pop("api_version", None)
-        return _make_minimal(payload_dict)
-
-
-def _make_minimal(dictionary):
-    """
-    This function removes all the keys whose value is either None or an empty
-    dictionary.
-    """
-    new_dict = {}
-    for key, value in dictionary.items():
-        if value is not None:
-            if isinstance(value, dict):
-                new_value = _make_minimal(value)
-                if new_value:
-                    new_dict[key] = new_value
-            else:
-                new_dict[key] = value
-    return new_dict
+        return util._make_minimal(payload_dict)

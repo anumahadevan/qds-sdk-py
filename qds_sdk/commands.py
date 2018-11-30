@@ -22,6 +22,7 @@ import re
 import pipes
 import os
 import json
+import signal
 
 log = logging.getLogger("qds_commands")
 
@@ -94,7 +95,14 @@ class Command(Resource):
         print_logs_live = kwargs.pop("print_logs_live", None) # We don't want to send this to the API.
 
         cmd = cls.create(**kwargs)
+
+        sighandler = SignalHandler()
+
         while not Command.is_done(cmd.status):
+            if sighandler.received_term_signal:
+                logging.warning("Received signal {}. Canceling Qubole Command ID: {}".format(sighandler.last_signal, cmd.id))
+                cls.cancel(cmd)
+                exit()
             time.sleep(Qubole.poll_interval)
             cmd = cls.find(cmd.id)
             if print_logs_live is True:
@@ -192,7 +200,7 @@ class Command(Resource):
         return r.text
 
 
-    def get_results(self, fp=sys.stdout, inline=True, delim=None, fetch=True):
+    def get_results(self, fp=sys.stdout, inline=True, delim=None, fetch=True, qlog=None, arguments=[]):
         """
         Fetches the result for the command represented by this object
 
@@ -212,35 +220,54 @@ class Command(Resource):
 
         conn = Qubole.agent()
 
-        r = conn.get(result_path, {'inline': inline})
+        include_header = "false"
+        if len(arguments) == 1:
+            include_header = arguments.pop(0)
+            if include_header not in ('true', 'false'):
+                raise ParseError("incude_header can be either true or false")
+
+
+        r = conn.get(result_path, {'inline': inline, 'include_headers': include_header})
         if r.get('inline'):
+            raw_results = r['results']
+            encoded_results = raw_results.encode('utf8')
             if sys.version_info < (3, 0, 0):
-                fp.write(r['results'].encode('utf8'))
+                fp.write(encoded_results)
             else:
                 import io
                 if isinstance(fp, io.TextIOBase):
-                    fp.buffer.write(r['results'].encode('utf8'))
+                    if hasattr(fp, 'buffer'):
+                        fp.buffer.write(encoded_results)
+                    else:
+                        fp.write(raw_results)
                 elif isinstance(fp, io.BufferedIOBase) or isinstance(fp, io.RawIOBase):
-                    fp.write(r['results'].encode('utf8'))
+                    fp.write(encoded_results)
                 else:
                     # Can this happen? Don't know what's the right thing to do in this case.
                     pass
         else:
             if fetch:
                 storage_credentials = conn.get(Account.credentials_rest_entity_path)
-                boto_conn = boto.connect_s3(aws_access_key_id=storage_credentials['storage_access_key'],
-                                            aws_secret_access_key=storage_credentials['storage_secret_key'],
-                                            security_token = storage_credentials['session_token'])
+                boto_conn = boto.connect_s3(aws_access_key_id=storage_credentials.get('storage_config').get('access_key'),
+                                            aws_secret_access_key=storage_credentials.get('storage_config').get('secret_key'),
+                                            security_token = storage_credentials.get('storage_config').get('session_token'))
 
                 log.info("Starting download from result locations: [%s]" % ",".join(r['result_location']))
                 #fetch latest value of num_result_dir
                 num_result_dir = Command.find(self.id).num_result_dir
+
                 for s3_path in r['result_location']:
+
+                    # If column/header names are not able to fetch then use include header as true
+                    if include_header.lower() == "true" and qlog is not None:
+                        write_headers(qlog, fp)
+
                     # In Python 3,
                     # If the delim is None, fp should be in binary mode because
                     # boto expects it to be.
                     # If the delim is not None, then both text and binary modes
                     # work.
+
                     _download_to_local(boto_conn, s3_path, fp, num_result_dir, delim=delim,
                                        skip_data_avail_check=isinstance(self, PrestoCommand))
             else:
@@ -275,6 +302,9 @@ class HiveCommand(Command):
 
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this query")
+
+    optparser.add_option("--pool", dest="pool",
+                         help="Specify the Fairscheduler pool name for the command to use")
 
     optparser.add_option("--hive-version", dest="hive_version",
                          help="Specifies the hive version to be used. eg: 0.13,1.2,etc.")
@@ -436,8 +466,10 @@ class SparkCommand(Command):
 
     optparser.add_option("--sql", dest="sql", help="sql for Spark")
 
+    optparser.add_option("--note-id", dest="note_id", help="Id of the Notebook to run.")
+
     optparser.add_option("-f", "--script_location", dest="script_location",
-                         help="Path where spark program to run is stored. Has to be a local file path")
+                         help="Path where spark program to run is stored. Can be S3 URI or local file path")
 
     optparser.add_option("--macros", dest="macros",
                          help="expressions to expand macros used in query")
@@ -455,6 +487,9 @@ class SparkCommand(Command):
 
     optparser.add_option("--name", dest="name", help="Assign a name to this query")
 
+    optparser.add_option("--pool", dest="pool",
+                         help="Specify the Fairscheduler pool name for the command to use")
+
     optparser.add_option("--arguments", dest = "arguments", help = "Spark Submit Command Line Options")
 
     optparser.add_option("--user_program_arguments", dest = "user_program_arguments", help = "Arguments for User Program")
@@ -468,12 +503,12 @@ class SparkCommand(Command):
     @classmethod
     def validate_program(cls, options):
         bool_program = options.program is not None
-        bool_other_options = options.script_location is not None or options.cmdline is not None or options.sql is not None
+        bool_other_options = options.script_location is not None or options.cmdline is not None or options.sql is not None or options.note_id is not None
 
         # if both are false then no option is specified ==> raise ParseError
         # if both are true then atleast two option specified ==> raise ParseError
         if bool_program == bool_other_options:
-            raise ParseError("Exactly One of script location or program or cmdline or sql should be specified", cls.optparser.format_help())
+            raise ParseError("Exactly One of script location or program or cmdline or sql or note_id should be specified", cls.optparser.format_help())
         if bool_program:
             if options.language is None:
                 raise ParseError("Unspecified language for Program", cls.optparser.format_help())
@@ -481,12 +516,12 @@ class SparkCommand(Command):
     @classmethod
     def validate_cmdline(cls, options):
         bool_cmdline = options.cmdline is not None
-        bool_other_options = options.script_location is not None or options.program is not None or options.sql is not None
+        bool_other_options = options.script_location is not None or options.program is not None or options.sql is not None or options.note_id is not None
 
         # if both are false then no option is specified ==> raise ParseError
         # if both are true then atleast two option specified ==> raise ParseError
         if bool_cmdline == bool_other_options:
-            raise ParseError("Exactly One of script location or program or cmdline or sql should be specified", cls.optparser.format_help())
+            raise ParseError("Exactly One of script location or program or cmdline or sql or note_id should be specified", cls.optparser.format_help())
         if bool_cmdline:
             if options.language is not None:
                 raise ParseError("Language cannot be specified with the commandline option", cls.optparser.format_help())
@@ -496,12 +531,12 @@ class SparkCommand(Command):
     @classmethod
     def validate_sql(cls, options):
         bool_sql = options.sql is not None
-        bool_other_options = options.script_location is not None or options.program is not None or options.cmdline is not None
+        bool_other_options = options.script_location is not None or options.program is not None or options.cmdline is not None or options.note_id is not None
 
         # if both are false then no option is specified => raise PraseError
         # if both are true then atleast two option specified => raise ParseError
         if bool_sql == bool_other_options:
-            raise ParseError("Exactly One of script location or program or cmdline or sql should be specified", cls.optparser.format_help())
+            raise ParseError("Exactly One of script location or program or cmdline or sql or note_id should be specified", cls.optparser.format_help())
         if bool_sql:
             if options.language is not None:
                 raise ParseError("Language cannot be specified with the 'sql' option", cls.optparser.format_help())
@@ -509,17 +544,31 @@ class SparkCommand(Command):
     @classmethod
     def validate_script_location(cls, options):
         bool_script_location = options.script_location is not None
-        bool_other_options = options.program is not None or options.cmdline is not None or options.sql is not None
+        bool_other_options = options.program is not None or options.cmdline is not None or options.sql is not None or options.note_id is not None
 
         # if both are false then no option is specified ==> raise ParseError
         # if both are true then atleast two option specified ==> raise ParseError
         if bool_script_location == bool_other_options:
-            raise ParseError("Exactly One of script location or program or cmdline or sql should be specified", cls.optparser.format_help())
+            raise ParseError("Exactly One of script location or program or cmdline or sql or note_id should be specified", cls.optparser.format_help())
 
         if bool_script_location:
             if options.language is not None:
                 raise ParseError("Both script location and language cannot be specified together", cls.optparser.format_help())
             # for now, aws script_location is not supported and throws an error
+            fileName, fileExtension = os.path.splitext(options.script_location)
+            # getting the language of the program from the file extension
+            if fileExtension == ".py":
+                options.language = "python"
+            elif fileExtension == ".scala":
+                options.language = "scala"
+            elif fileExtension == ".R":
+                options.language = "R"
+            elif fileExtension == ".sql":
+                options.language = "sql"
+            else:
+                raise ParseError("Invalid program type %s. Please choose one from python, scala, R or sql." % str(fileExtension),
+                                 cls.optparser.format_help())
+                
             if ((options.script_location.find("s3://") != 0) and
                 (options.script_location.find("s3n://") != 0)):
 
@@ -532,30 +581,14 @@ class SparkCommand(Command):
                                      str(e),
                                      cls.optparser.format_help())
 
-
-                fileName, fileExtension = os.path.splitext(options.script_location)
-                # getting the language of the program from the file extension
-                if fileExtension == ".py":
-                    options.language = "python"
-                elif fileExtension == ".scala":
-                    options.language = "scala"
-                elif fileExtension == ".R":
-                    options.language = "R"
-                elif fileExtension == ".sql":
-                    options.language = "sql"
+            
+                options.script_location = None
+                if options.language == "sql":
+                    options.sql = q
+                    options.language = None
                 else:
-                    raise ParseError("Invalid program type %s. Please choose one from python, scala, R or sql." % str(fileExtension),
-                                     cls.optparser.format_help())
-            else:
-                raise ParseError("Invalid location, Please choose a local file location",
-                                 cls.optparser.format_help())
+                    options.program = q
 
-            options.script_location = None
-            if options.language == "sql":
-                options.sql = q
-                options.language = None
-            else:
-                options.program = q
 
     @classmethod
     def parse(cls, args):
@@ -691,6 +724,9 @@ class HadoopCommand(Command):
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this command")
 
+    optparser.add_option("--pool", dest="pool",
+                         help="Specify the Fairscheduler pool name for the command to use")
+
     optparser.add_option("--tags", dest="tags",
                          help="comma-separated list of tags to be associated with the query ( e.g., tag1 tag1,tag2 )")
 
@@ -733,6 +769,7 @@ class HadoopCommand(Command):
         parsed["command_type"] = "HadoopCommand"
         parsed['print_logs'] = options.print_logs
         parsed['print_logs_live'] = options.print_logs_live
+        parsed['pool'] = options.pool
 
         if len(args) < 2:
             raise ParseError("Need at least two arguments", cls.usage)
@@ -774,6 +811,9 @@ class ShellCommand(Command):
 
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this command")
+
+    optparser.add_option("--pool", dest="pool",
+                         help="Specify the Fairscheduler pool name for the command to use")
 
     optparser.add_option("--print-logs", action="store_true", dest="print_logs",
                          default=False, help="Fetch logs and print them to stderr.")
@@ -870,6 +910,9 @@ class PigCommand(Command):
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this command")
 
+    optparser.add_option("--pool", dest="pool",
+                         help="Specify the Fairscheduler pool name for the command to use")
+
     optparser.add_option("--print-logs", action="store_true", dest="print_logs",
                          default=False, help="Fetch logs and print them to stderr.")
     optparser.add_option("--print-logs-live", action="store_true", dest="print_logs_live",
@@ -955,6 +998,8 @@ class DbExportCommand(Command):
     optparser = GentleOptionParser(usage=usage)
     optparser.add_option("-m", "--mode", dest="mode",
                          help="Can be 1 for Hive export or 2 for HDFS/S3 export")
+    optparser.add_option("--schema", help="Hive schema name assumed to be 'default' if not specified",
+                              default="default", dest="schema")
     optparser.add_option("--hive_table", dest="hive_table",
                          help="Mode 1: Name of the Hive Table from which data will be exported")
     optparser.add_option("--partition_spec", dest="partition_spec",
@@ -963,6 +1008,10 @@ class DbExportCommand(Command):
                          help="Modes 1 and 2: DbTap Id of the target database in Qubole")
     optparser.add_option("--db_table", dest="db_table",
                          help="Modes 1 and 2: Table to export to in the target database")
+    optparser.add_option("--use_customer_cluster", dest="use_customer_cluster", default=False,
+                         help="Modes 1 and 2: To use cluster to run command ")
+    optparser.add_option("--customer_cluster_label", dest="customer_cluster_label",
+                         help="Modes 1 and 2: the label of the cluster to run the command on")
     optparser.add_option("--db_update_mode", dest="db_update_mode",
                          help="Modes 1 and 2: (optional) can be 'allowinsert' or "
                               "'updateonly'. If updateonly is "
@@ -987,6 +1036,9 @@ class DbExportCommand(Command):
 
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this command")
+
+    optparser.add_option("--additional_options",
+                         help="Additional Sqoop options which are needed enclose options in double or single quots e.g. '--map-column-hive id=int,data=string'")
 
     optparser.add_option("--print-logs", action="store_true", dest="print_logs",
                          default=False, help="Fetch logs and print them to stderr.")
@@ -1052,17 +1104,14 @@ class DbExportCommand(Command):
         v["command_type"] = "DbExportCommand"
         return v
 
-
-class DbexportCommand(DbExportCommand):
-    pass
-
-
 class DbImportCommand(Command):
     usage = "dbimportcmd <submit|run> [options]"
 
     optparser = GentleOptionParser(usage=usage)
     optparser.add_option("-m", "--mode", dest="mode",
                          help="Can be 1 for Hive export or 2 for HDFS/S3 export")
+    optparser.add_option("--schema", help="Hive database to import into. 'default' is assumed if nothing is specified",
+                         default="default", dest="schema")
     optparser.add_option("--hive_table", dest="hive_table",
                          help="Mode 1: Name of the Hive Table from which data will be exported")
     optparser.add_option("--hive_serde", dest="hive_serde",
@@ -1071,11 +1120,14 @@ class DbImportCommand(Command):
                          help="Modes 1 and 2: DbTap Id of the target database in Qubole")
     optparser.add_option("--db_table", dest="db_table",
                          help="Modes 1 and 2: Table to export to in the target database")
+    optparser.add_option("--use_customer_cluster", dest="use_customer_cluster", default=False,
+                         help="Modes 1 and 2: To use cluster to run command ")
+    optparser.add_option("--customer_cluster_label", dest="customer_cluster_label",
+                         help="Modes 1 and 2: the label of the cluster to run the command on")
     optparser.add_option("--where_clause", dest="db_where",
                          help="Mode 1: where clause to be applied to the table before extracting rows to be imported")
     optparser.add_option("--parallelism", dest="db_parallelism",
                          help="Mode 1 and 2: Number of parallel threads to use for extracting data")
-
     optparser.add_option("--extract_query", dest="db_extract_query",
                          help="Modes 2: SQL query to be applied at the source database for extracting data. "
                               "$CONDITIONS must be part of the where clause")
@@ -1083,21 +1135,22 @@ class DbImportCommand(Command):
                          help="Mode 2: query to be used get range of rowids to be extracted")
     optparser.add_option("--split_column", dest="db_split_column",
                          help="column used as rowid to split data into range")
-
     optparser.add_option("--notify", action="store_true", dest="can_notify",
                          default=False, help="sends an email on command completion")
-
     optparser.add_option("--tags", dest="tags",
                          help="comma-separated list of tags to be associated with the query ( e.g., tag1 tag1,tag2 )")
-
     optparser.add_option("--name", dest="name",
                          help="Assign a name to this command")
-
+    optparser.add_option("--additional_options",
+                          help="Additional Sqoop options which are needed enclose options in double or single quotes")
     optparser.add_option("--print-logs", action="store_true", dest="print_logs",
                          default=False, help="Fetch logs and print them to stderr.")
     optparser.add_option("--print-logs-live", action="store_true", dest="print_logs_live",
                          default=False, help="Fetch logs and print them to stderr while command is running.")
     optparser.add_option("--retry", dest="retry", default=0, choices=[1,2,3], help="Number of retries for a job")
+    optparser.add_option("--partition_spec", dest="part_spec", default=None, help="Mode 1: (optional) Partition specification for Hive table")
+
+
 
     @classmethod
     def parse(cls, args):
@@ -1224,6 +1277,23 @@ class DbTapQueryCommand(Command):
         v["command_type"] = "DbTapQueryCommand"
         return v
 
+class SignalHandler:
+    """
+    Catch terminate signals to allow graceful termination of run()
+    """
+
+    def __init__(self):
+        self.last_signal = None
+        self.received_term_signal = False
+        self.term_signals = [signal.SIGINT, signal.SIGQUIT, signal.SIGTERM]
+        for signum in self.term_signals:
+            signal.signal(signum, self.handler)
+
+    def handler(self, signum, frame):
+        self.last_signal = signum
+        if signum in self.term_signals:
+            self.received_term_signal = True
+
 def _read_iteratively(key_instance, fp, delim):
     key_instance.open_read()
     while True:
@@ -1244,6 +1314,20 @@ def _read_iteratively(key_instance, fp, delim):
         except StopIteration:
             # Stream closes itself when the exception is raised
             return
+
+def write_headers(qlog,fp):
+    col_names = []
+    qlog = json.loads(qlog)
+    if qlog["QBOL-QUERY-SCHEMA"] is not None:
+        qlog_hash = qlog["QBOL-QUERY-SCHEMA"]["-1"] if qlog["QBOL-QUERY-SCHEMA"]["-1"] is not None else qlog["QBOL-QUERY-SCHEMA"][qlog["QBOL-QUERY-SCHEMA"].keys[0]]
+
+        for qlog_item in qlog_hash:
+            col_names.append(qlog_item["ColumnName"])
+
+        col_names = "\t".join(col_names)
+        col_names += "\n"
+
+    fp.write(col_names)
 
 
 def _download_to_local(boto_conn, s3_path, fp, num_result_dir, delim=None, skip_data_avail_check=False):
@@ -1314,7 +1398,18 @@ def _download_to_local(boto_conn, s3_path, fp, num_result_dir, delim=None, skip_
             raise Exception("Results file not available on s3 yet. This can be because of s3 eventual consistency issues.")
         log.info("Downloading file from %s" % s3_path)
         if delim is None:
-            key_instance.get_contents_to_file(fp)  # cb=_callback
+            try:
+                key_instance.get_contents_to_file(fp)  # cb=_callback
+            except boto.exception.S3ResponseError as e:
+                if (e.status == 403):
+                    # SDK-191, boto gives an error while fetching the objects using versions which happens by default
+                    # in the get_contents_to_file() api. So attempt one without specifying version.
+                    log.warn("Access denied while fetching the s3 object. Retrying without specifying the version....")
+                    key_instance.open()
+                    fp.write(key_instance.read())
+                    key_instance.close()
+                else:
+                    raise
         else:
             # Get contents as string. Replace parameters and write to file.
             _read_iteratively(key_instance, fp, delim=delim)
