@@ -1141,11 +1141,11 @@ class ClusterInfoV13():
             except Exception as e:
                 raise Exception("Invalid JSON string for custom ec2 tags: %s" % e.message)
 
-    def set_spot_instance_settings(self, maximum_bid_price_percentage=None,
+    def set_spot_instance_settings(self, max_bid_price_percentage=None,
                                    timeout_for_request=None,
                                    maximum_spot_instance_percentage=None):
         self.node_configuration['spot_instance_settings'] = {
-               'maximum_bid_price_percentage': maximum_bid_price_percentage,
+               'maximum_bid_price_percentage': max_bid_price_percentage,
                'timeout_for_request': timeout_for_request,
                'maximum_spot_instance_percentage': maximum_spot_instance_percentage}
 
